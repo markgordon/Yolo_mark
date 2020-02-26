@@ -4,3 +4,8 @@
 /Makefile
 /cmake_install.cmake
 /yolo_mark
+/.vs/
+*.dll
+/yolo_mark.vcxproj.user
+/parse.cmd
+/yolo_mark.exe

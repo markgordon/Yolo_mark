@@ -168,6 +168,14 @@ public:
     }
 
 };
+Mat preview(Size(100, 100), CV_8UC3);
+Mat full_image(Size(1280, 720), CV_8UC3);
+Mat frame(Size(full_image.cols, full_image.rows + preview.rows), CV_8UC3);
+
+Rect full_rect_dst(Point2i(0, preview.rows), Size(frame.cols, frame.rows - preview.rows));
+Mat full_image_roi = frame(full_rect_dst);
+
+size_t const preview_number = frame.cols / preview.cols;
 
 std::atomic<bool> right_button_click;
 std::atomic<int> move_rect_id;
@@ -188,12 +196,15 @@ std::atomic<int> x_start, y_start;
 std::atomic<int> x_end, y_end;
 std::atomic<int> x_size, y_size;
 std::atomic<bool> draw_select, selected, undo;
+int old_trackbar_value = -1, trackbar_value = 0;
 
 std::atomic<int> add_id_img;
 Rect prev_img_rect(0, 0, 50, 100);
 Rect next_img_rect(1280 - 50, 0, 50, 100);
-
-
+//how many times since last complete rectangle have we clicked
+int point_count = 0;
+//the four points of the object
+Point points[4];
 void callback_mouse_click(int event, int x, int y, int flags, void* user_data)
 {
     if (event == cv::EVENT_LBUTTONDBLCLK)
@@ -202,24 +213,47 @@ void callback_mouse_click(int event, int x, int y, int flags, void* user_data)
     }
     else if (event == cv::EVENT_LBUTTONDOWN)
     {
-        draw_select = true;
-        selected = false;
-        x_start = x;
-        y_start = y;
 
-        if (prev_img_rect.contains(Point2i(x, y))) add_id_img = -1;
-        else if (next_img_rect.contains(Point2i(x, y))) add_id_img = 1;
-        else add_id_img = 0;
-        //std::cout << "cv::EVENT_LBUTTONDOWN \n";
-    }
+		x_start = x;
+		y_start = y;
+		if (prev_img_rect.contains(Point2i(x, y))) {
+
+			add_id_img = -1;
+		}
+		else if (next_img_rect.contains(Point2i(x, y))) {
+			add_id_img = 1;
+
+		}
+		else 		if (y_end < preview.rows && x_end > prev_img_rect.width&& x_end < (full_image.cols - prev_img_rect.width) &&
+			y_start < preview.rows)
+		{
+
+			int const i = (x_end - prev_img_rect.width) / preview.cols;
+			trackbar_value += i;
+			point_count = 0;
+		} //std::cout << "cv::EVENT_LBUTTONDOWN" << x << y <<"\n";
+		else
+		{
+			draw_select = true;
+			selected = false;
+			add_id_img = 0;
+			x_start = x;
+			y_start = y;
+			points[point_count].x = x;
+			points[point_count].y = y;
+			point_count++;
+			x_size = abs(x - x_start);
+			y_size = abs(y - y_start);
+			x_end = max(x, 0);
+			y_end = max(y, 0);
+
+		}
+
+	}
     else if (event == cv::EVENT_LBUTTONUP)
     {
-        x_size = abs(x - x_start);
-        y_size = abs(y - y_start);
-        x_end = max(x, 0);
-        y_end = max(y, 0);
-        draw_select = false;
-        selected = true;
+		draw_select = false;
+		selected = true;
         //std::cout << "cv::EVENT_LBUTTONUP \n";
     }
     else if (event == cv::EVENT_RBUTTONDOWN)
@@ -232,6 +266,7 @@ void callback_mouse_click(int event, int x, int y, int flags, void* user_data)
     }
     else if (event == cv::EVENT_RBUTTONUP)
     {
+		delete_selected = true;
         right_button_click = false;
         move_rect = true;
     }
@@ -384,7 +419,7 @@ int main(int argc, char *argv[])
 		}
 
 		// check whether there are files with the same names (but different extensions)
-		{
+		/*{
 			auto sorted_names_without_ext = jpg_filenames_without_ext;
 			std::sort(sorted_names_without_ext.begin(), sorted_names_without_ext.end());
 			for (size_t i = 1; i < sorted_names_without_ext.size(); ++i) {
@@ -401,7 +436,7 @@ int main(int argc, char *argv[])
 					return 0;
 				}
 			}
-		}
+		}*/
 
 		// intersect jpg & txt
 		std::vector<std::string> intersect_filenames(jpg_filenames.size());
@@ -463,14 +498,6 @@ int main(int argc, char *argv[])
 		}
 		std::cout << "File loaded: " << synset_filename << std::endl;
 
-		Mat preview(Size(100, 100), CV_8UC3);
-		Mat full_image(Size(1280, 720), CV_8UC3);
-		Mat frame(Size(full_image.cols, full_image.rows + preview.rows), CV_8UC3);
-
-		Rect full_rect_dst(Point2i(0, preview.rows), Size(frame.cols, frame.rows - preview.rows));
-		Mat full_image_roi = frame(full_rect_dst);
-
-		size_t const preview_number = frame.cols / preview.cols;
 
 
         // labels on the current image
@@ -488,7 +515,6 @@ int main(int argc, char *argv[])
 		bool next_by_click = false;
 		bool marks_changed = false;
 
-		int old_trackbar_value = -1, trackbar_value = 0;
 		std::string const trackbar_name = "image num";
 		int tb_res = createTrackbar(trackbar_name, window_name, &trackbar_value, image_list_count);
 
@@ -657,30 +683,29 @@ int main(int argc, char *argv[])
 					current_coord_vec.pop_back();
 				}
 			}
-
+			std::string current_synset_name;
+			if (current_obj_id < synset_txt.size()) current_synset_name = "   - " + synset_txt[current_obj_id];
             // marking is completed (left mouse button is OFF)
-			if (selected)
+			if (point_count > 3)
 			{
 				selected = false;
 				full_image.copyTo(full_image_roi);
 
-				if (y_end < preview.rows && x_end > prev_img_rect.width && x_end < (full_image.cols - prev_img_rect.width) &&
-					y_start < preview.rows)
-				{
-					int const i = (x_end - prev_img_rect.width) / preview.cols;
-					trackbar_value += i;
-				}
-				else if (y_end >= preview.rows)
 				{
 					if (next_by_click) {
 						++trackbar_value;
 						current_coord_vec.clear();
 					}
-
-					Rect selected_rect(
-						Point2i((int)min(x_start, x_end), (int)min(y_start, y_end)),
-						Size(x_size, y_size));
-
+					//calc rect base on four limits
+					int xmin = 0xfffffff, xmax = 0, ymin = 0xffffff, ymax = 0;
+					for (int l = 0; l < 4; l++) {
+						xmin = std::min(points[l].x, xmin);
+						xmax = std::max(points[l].x, xmax);
+						ymin = std::min(points[l].y, ymin);
+						ymax = std::max(points[l].y, ymax);
+					}
+					Rect selected_rect(xmin,ymin,xmax - xmin,ymax-ymin);
+					std::cout << "x" << xmin << "y" << ymin << "w" << xmax - xmin << "h" << ymax - ymin << std::endl;
 					selected_rect &= full_rect_dst;
 					selected_rect.y -= (int)prev_img_rect.height;
 
@@ -691,10 +716,32 @@ int main(int argc, char *argv[])
 
 					marks_changed = true;
 				}
-			}
+				point_count = 0;
 
-			std::string current_synset_name;
-			if (current_obj_id < synset_txt.size()) current_synset_name = "   - " + synset_txt[current_obj_id];
+			}
+			else
+			{
+				if (add_id_img != 0) trackbar_value += add_id_img;
+				if (y_start >= preview.rows)
+				{
+					//full_image.copyTo(full_image_roi);
+					for (int l = 0; l < point_count; l++) {
+						Rect selected_rect(
+							Point2i(points[point_count].x, points[point_count].x + 1),
+							Point2i(points[point_count].y, points[point_count].y + 1));
+						rectangle(frame, selected_rect, Scalar(150, 200, 150));
+					}
+					Rect selected_rect(
+						Point2i(points[point_count].x, points[point_count].x + 1),
+						Point2i(points[point_count].y, points[point_count].y + 1));
+					rectangle(frame, selected_rect, Scalar(150, 200, 150));
+					if (show_mark_class)
+					{
+						putText(frame, std::to_string(current_obj_id) + current_synset_name,
+							selected_rect.tl() + Point2i(2, 22), FONT_HERSHEY_SIMPLEX, 0.8, Scalar(150, 200, 150), 2);
+					}
+				}
+			}
 
             // show X and Y coords of mouse
 			if (show_mouse_coords) {
@@ -719,26 +766,7 @@ int main(int argc, char *argv[])
 				//putText(full_image_roi, text, Point2i(800, 20), FONT_HERSHEY_SIMPLEX, 0.7, Scalar(220, 120, 120), 1);
 			}
 
-            // marking is in progress (left mouse button is ON)
-			if (draw_select)
-			{
-				if (add_id_img != 0) trackbar_value += add_id_img;
 
-				if (y_start >= preview.rows)
-				{
-					//full_image.copyTo(full_image_roi);
-					Rect selected_rect(
-						Point2i(max(0, (int)min(x_start, x_end)), max(preview.rows, (int)min(y_start, y_end))),
-						Point2i(max(x_start, x_end), max(y_start, y_end)));
-					rectangle(frame, selected_rect, Scalar(150, 200, 150));
-
-					if (show_mark_class)
-					{
-						putText(frame, std::to_string(current_obj_id) + current_synset_name,
-							selected_rect.tl() + Point2i(2, 22), FONT_HERSHEY_SIMPLEX, 0.8, Scalar(150, 200, 150), 2);
-					}
-				}
-			}
 
 			// Draw crosshair
 			{
@@ -913,7 +941,7 @@ int main(int argc, char *argv[])
 			imshow(window_name, frame);
 
 #ifndef CV_VERSION_EPOCH
-			int pressed_key = cv::waitKeyEx(20);	// OpenCV 3.x
+			int pressed_key = cv::waitKeyEx(40);	// OpenCV 3.x
 #else
 			int pressed_key = cv::waitKey(20);		// OpenCV 2.x
 #endif
