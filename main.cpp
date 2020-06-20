@@ -255,6 +255,7 @@ void callback_mouse_click(int event, int x, int y, int flags, void* user_data)
 		draw_select = false;
 		selected = true;
         //std::cout << "cv::EVENT_LBUTTONUP \n";
+		add_id_img = 0;
     }
     else if (event == cv::EVENT_RBUTTONDOWN)
     {
@@ -686,7 +687,7 @@ int main(int argc, char *argv[])
 			std::string current_synset_name;
 			if (current_obj_id < synset_txt.size()) current_synset_name = "   - " + synset_txt[current_obj_id];
             // marking is completed (left mouse button is OFF)
-			if (point_count > 3)
+			if (point_count > 1)
 			{
 				selected = false;
 				full_image.copyTo(full_image_roi);
@@ -698,7 +699,7 @@ int main(int argc, char *argv[])
 					}
 					//calc rect base on four limits
 					int xmin = 0xfffffff, xmax = 0, ymin = 0xffffff, ymax = 0;
-					for (int l = 0; l < 4; l++) {
+					for (int l = 0; l < 2; l++) {
 						xmin = std::min(points[l].x, xmin);
 						xmax = std::max(points[l].x, xmax);
 						ymin = std::min(points[l].y, ymin);
